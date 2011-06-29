@@ -11,12 +11,12 @@ import guilloche
 import tween_chain
 import butterfly_curve
 import harmonograph
-import mesh
+#import mesh
 import swallow_tail
 
 # local only
-import physics
-import sandbox
+#import physics
+#import sandbox
 
 # -----------------------------------------
 
