@@ -9,7 +9,6 @@ import testpattern
 import two_cubes
 import guilloche
 import tween_chain
-import party_in_your_pants
 import butterfly_curve
 import harmonograph
 import mesh
