@@ -11,6 +11,18 @@
 #include <xenon/Graphics/SyphonClient.h>
 #endif 
 
+
+#define GL_GLEXT_PROTOTYPES
+#ifdef __APPLE__
+#include <OpenGL/gl.h>
+#include <OpenGL/glu.h>
+#include <AGL/agl.h>
+#else // Linux
+#include <GL/gl.h>
+#include <GL/glu.h>
+#include <GL/glext.h>
+#endif
+
 // OpenCV
 #include <opencv/cv.h>
 

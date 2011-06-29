@@ -3,6 +3,7 @@
 #include <xenon/Core/Log.h>
 #include <xenon/Core/Time.h>
 
+#define GL_GLEXT_PROTOTYPES
 #ifdef __APPLE__
 #include <OpenGL/gl.h>
 #include <OpenGL/glu.h>
@@ -10,6 +11,7 @@
 #else // Linux
 #include <GL/gl.h>
 #include <GL/glu.h>
+#include <GL/glext.h>
 #endif
 
 // OpenCV
@@ -163,13 +165,13 @@ void lux::VideoEngine::draw_gl() {
 
   if (!m_initialized)
     return;
-
+#ifdef __APPLE__
   int syphon_width = m_syphon_client.getWidth();
   int syphon_height = m_syphon_client.getHeight();
   float syphon_aspect = 1.0;
   if (syphon_width != 0 && syphon_height != 0)
     syphon_aspect = float(syphon_width) / syphon_height;
-
+#endif
   // FIRST: DRAW INTO THE RENDER BUFFER (AT LOW RES) AND READ OUT THE PIXELS
   glViewport(0, 0, m_viewport_width, m_viewport_height);
   glMatrixMode(GL_PROJECTION);
