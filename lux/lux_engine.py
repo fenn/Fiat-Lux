@@ -12,7 +12,7 @@ from plugins.lux_plugin import LuxPlugin
     
 class LuxEngine(QtCore.QThread):
 
-    def __init__(self, audio_engine, video_engine, parent = None):
+    def __init__(self, audio_engine, video_engine, output_engine, parent = None):
         QtCore.QThread.__init__(self, parent)
 
         self.settings = LuxSettings()
@@ -25,10 +25,8 @@ class LuxEngine(QtCore.QThread):
         self.settings['video'].refreshWithDefault('maxArea', 99.0)
         self.settings['video'].refreshWithDefault('maxNum', 10)
         
-        # Initialize OpenLase
-        if (ol.init(3, 96000) != 0):
-            raise Exception("Could not initialize openlase")
 
+        self.settings['calibration'].refreshWithDefault('parameterOverride', False)
         self.settings['calibration'].refreshWithDefault('olRate', 30000 / 30000.0 * 99.0)
         self.settings['calibration'].refreshWithDefault('olOnSpeed', 100)
         self.settings['calibration'].refreshWithDefault('olOffSpeed', 20)
@@ -45,12 +43,14 @@ class LuxEngine(QtCore.QThread):
 
         self.audio_engine = audio_engine
         self.video_engine = video_engine
+        self.output_engine = output_engine
 
         self.current_plugin_key = None
         self.current_plugin = None
         self.random_plugin()
 
     def __del__(self):
+        self.output_engine.setOutputInitialized(False)  # Turn on the hardware safety interlock
         self.exiting = True
         self.wait()
 
@@ -65,46 +65,67 @@ class LuxEngine(QtCore.QThread):
         print '\t--> Starting up LUX Engine.'
         ftime = 0
         frames = 0
-        while not self.exiting:
-            self.lock.lock()
 
-            # Check to see if we need to update OL parameters
-            if (self.ol_update_params):
-                params = ol.getRenderParams()
-                params.rate = self.settings['calibration'].olRate
-                #params.max_framelen = self.settings['calibration'].olRate
-                params.on_speed = 1.0/self.settings['calibration'].olOnSpeed
-                params.off_speed = 1.0/self.settings['calibration'].olOffSpeed
-                params.start_wait = self.settings['calibration'].olStartWait
-                params.start_dwell = self.settings['calibration'].olStartDwell
-                params.curve_dwell = self.settings['calibration'].olCurveDwell
-                params.corner_dwell = self.settings['calibration'].olCornerDwell
-                params.curve_angle = math.cos(30.0*(math.pi/180.0)); # 30 deg
-                params.end_dwell = self.settings['calibration'].olEndDwell
-                params.end_wait = self.settings['calibration'].olEndWait
-                params.snap = 1/100000.0;
-                #	params.render_flags = ol.RENDER_NOREORDER;
-                ol.setRenderParams(params)
+        # Initialize OpenLase.  This also creates the lux_engine jack endpoints.
+        if (ol.init(3, 96000) != 0):
+            raise Exception("Could not initialize openlase")
+
+        # Connect the output engine to the lux_engine.
+        self.output_engine.connect_ports("lux_engine:out_x", "lux_output:in_x")
+        self.output_engine.connect_ports("lux_engine:out_y", "lux_output:in_y")
+        self.output_engine.connect_ports("lux_engine:out_r", "lux_output:in_r")
+        self.output_engine.connect_ports("lux_engine:out_g", "lux_output:in_g")
+        self.output_engine.connect_ports("lux_engine:out_b", "lux_output:in_b")
+
+        # Turn off the hardware safety interlock.
+        self.output_engine.setOutputInitialized(True)
+
+        # Create a local settings object for this thread.
+        settings = LuxSettings()
+        
+        while not self.exiting:
+            # Grab local references to these class variables
+            self.lock.lock()
+            current_plugin = self.current_plugin
+            video_engine = self.video_engine
+            self.lock.unlock()
+            
+            # SET PARAMETERS
+            #
+            # Check to see if the GUI parameter override has been set,
+            # and we need to update OL parameters.
+            if (self.ol_update_params and settings['calibration'].parameterOverride and current_plugin):
+                current_plugin.setParametersToGuiValues()
                 self.ol_update_params = False
-                
-            if (self.current_plugin):
-                if (self.settings['video'].videoMode):
-                    self.video_engine.draw_lasers()
+
+            if (current_plugin and not settings['calibration'].parameterOverride):
+                current_plugin.setParameters();
+
+            # RENDER
+            #
+            # We call out to the current plugin's draw() method, or
+            # the video plugin, depending on the current state of the
+            # GUI.
+            if (current_plugin):
+                if (settings['video'].videoMode):
+                    video_engine.draw_lasers()
                 else:
-                    self.current_plugin.draw()
+                    current_plugin.draw()
 
                 frame_render_time = ol.renderFrame(60)   # Takes max_fps as argument
                 frames += 1
                 ftime += frame_render_time
                 #print "Frame time: %f, FPS:%f"%(frame_render_time, frame_render_time/ftime)
             else:
+                # If there is no plugin for some reason, kill time
+                # rather than burning CPU in a loop that does nothing.
                 time.sleep(0.1)
-            self.lock.unlock()
             
     # ---------------  METHODS CALLED BY OTHER THREADS ----------------
 
     def exit(self):
         print '\t--> Shutting down Lux Engine.'
+        self.output_engine.setOutputInitialized(False)  # Turn on the hardware safety interlock
         self.exiting = True
         self.wait()
 
@@ -120,8 +141,10 @@ class LuxEngine(QtCore.QThread):
          self.lock.unlock()
 
     def select_plugin(self, key):
+        self.lock.lock()
         self.current_plugin_key = key
         self.current_plugin = LuxPlugin.plugins[self.current_plugin_key]()
+        self.lock.unlock()
 
     def list_plugins(self):
         self.lock.lock()

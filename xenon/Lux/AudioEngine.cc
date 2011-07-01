@@ -1,4 +1,5 @@
 #include <xenon/Lux/AudioEngine.h>
+#include <xenon/Core/Exception.h>
 
 lux::AudioEngine::AudioEngine(std::string const& jack_endpoint_name) :
   AudioClient(jack_endpoint_name), m_left_buffer(48000), m_right_buffer(48000), m_avg_buffer(48000),
@@ -15,14 +16,16 @@ lux::AudioEngine::AudioEngine(std::string const& jack_endpoint_name) :
   std::ostringstream l_ostr,r_ostr;
   l_ostr << jack_endpoint_name << ":in_l";
   r_ostr << jack_endpoint_name << ":in_r";
+  try {
+    this->connect_ports("Soundflowerbed:out1", l_ostr.str());
+    this->connect_ports("Soundflowerbed:out2", r_ostr.str());
+    std::cout << "\t--> Audio Engine connected to the soundflowerbed ports.\n";
+  } catch (xenon::LogicErr &e) {
+    this->connect_ports("system:capture_1", l_ostr.str());
+    this->connect_ports("system:capture_2", r_ostr.str());
+    std::cout << "\t--> Audio Engine connected to the system capture ports.\n";
+  }
 
-#ifdef __APPLE__
-  this->connect_ports("Soundflowerbed:out1", l_ostr.str());
-  this->connect_ports("Soundflowerbed:out2", r_ostr.str());
-#else
-  this->connect_ports("system:capture_1", l_ostr.str());
-  this->connect_ports("system:capture_2", r_ostr.str());
-#endif
   // ------------
   // Set up Aubio
   // ------------
